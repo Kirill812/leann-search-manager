@@ -63,6 +63,17 @@ file_types:
 # Reindex interval in minutes (used by launchd)
 reindex_interval_minutes: 30
 
+# Settings
+settings:
+  # Skip indexing when running on battery power
+  pause_on_battery: true
+  # Maximum log file size in MB (auto-rotated)
+  max_log_size_mb: 50
+  # Launch manager GUI at macOS login
+  launch_at_login: false
+  # Number of search results in Raycast
+  search_results_count: 5
+
 # LEANN build options
 build_options:
   backend: hnsw

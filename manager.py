@@ -15,6 +15,7 @@ from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -27,6 +28,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTabWidget,
@@ -486,13 +488,228 @@ class StatsTab(QWidget):
         self.refresh()
 
 
+# --- Settings Tab ---
+
+def is_on_battery() -> bool:
+    """Check if Mac is running on battery power."""
+    try:
+        result = subprocess.run(
+            ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5
+        )
+        return "Battery Power" in result.stdout
+    except Exception:
+        return False
+
+
+class SettingsTab(QWidget):
+    config_changed = pyqtSignal()
+
+    def __init__(self, cfg: dict):
+        super().__init__()
+        self.cfg = cfg
+        self._init_ui()
+
+    def _init_ui(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        settings = self.cfg.setdefault("settings", {})
+        build_opts = self.cfg.setdefault("build_options", {})
+
+        # --- Power Management ---
+        power_box = QGroupBox("🔋 Power Management")
+        power_layout = QVBoxLayout(power_box)
+
+        self.battery_cb = QCheckBox("Pause indexing when running on battery")
+        self.battery_cb.setChecked(settings.get("pause_on_battery", True))
+        self.battery_cb.stateChanged.connect(self._on_change)
+        power_layout.addWidget(self.battery_cb)
+
+        battery_status = QLabel(
+            f"Current: {'🔋 Battery' if is_on_battery() else '🔌 AC Power'}"
+        )
+        battery_status.setStyleSheet("color: gray; font-size: 11px;")
+        power_layout.addWidget(battery_status)
+
+        layout.addWidget(power_box)
+
+        # --- Scheduling ---
+        schedule_box = QGroupBox("⏰ Reindex Schedule")
+        schedule_layout = QGridLayout(schedule_box)
+
+        schedule_layout.addWidget(QLabel("Reindex interval:"), 0, 0)
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(5, 1440)
+        self.interval_spin.setSuffix(" min")
+        self.interval_spin.setValue(self.cfg.get("reindex_interval_minutes", 30))
+        self.interval_spin.valueChanged.connect(self._on_change)
+        schedule_layout.addWidget(self.interval_spin, 0, 1)
+
+        interval_hint = QLabel("Applies after reloading the launchd agent")
+        interval_hint.setStyleSheet("color: gray; font-size: 11px;")
+        schedule_layout.addWidget(interval_hint, 1, 0, 1, 2)
+
+        layout.addWidget(schedule_box)
+
+        # --- Index Configuration ---
+        index_box = QGroupBox("📦 Index Configuration")
+        index_layout = QGridLayout(index_box)
+
+        index_layout.addWidget(QLabel("Index name:"), 0, 0)
+        self.index_name_input = QLineEdit(self.cfg.get("index_name", "mac-search"))
+        self.index_name_input.editingFinished.connect(self._on_change)
+        index_layout.addWidget(self.index_name_input, 0, 1)
+
+        index_layout.addWidget(QLabel("Work directory:"), 1, 0)
+        work_dir_row = QHBoxLayout()
+        self.work_dir_input = QLineEdit(self.cfg.get("work_dir", "~/.leann-search"))
+        self.work_dir_input.editingFinished.connect(self._on_change)
+        work_dir_browse = QPushButton("Browse...")
+        work_dir_browse.clicked.connect(self._browse_work_dir)
+        work_dir_row.addWidget(self.work_dir_input, 1)
+        work_dir_row.addWidget(work_dir_browse)
+        index_layout.addLayout(work_dir_row, 1, 1)
+
+        index_layout.addWidget(QLabel("Backend:"), 2, 0)
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["hnsw", "diskann"])
+        self.backend_combo.setCurrentText(build_opts.get("backend", "hnsw"))
+        self.backend_combo.currentTextChanged.connect(self._on_change)
+        index_layout.addWidget(self.backend_combo, 2, 1)
+
+        index_layout.addWidget(QLabel("Embedding model:"), 3, 0)
+        self.embedding_input = QLineEdit(
+            build_opts.get("embedding_model", "facebook/contriever")
+        )
+        self.embedding_input.editingFinished.connect(self._on_change)
+        index_layout.addWidget(self.embedding_input, 3, 1)
+
+        self.compact_cb = QCheckBox("Compact index (disables incremental updates)")
+        self.compact_cb.setChecked(build_opts.get("compact", False))
+        self.compact_cb.stateChanged.connect(self._on_change)
+        index_layout.addWidget(self.compact_cb, 4, 0, 1, 2)
+
+        layout.addWidget(index_box)
+
+        # --- Search ---
+        search_box = QGroupBox("🔍 Search")
+        search_layout = QGridLayout(search_box)
+
+        search_layout.addWidget(QLabel("Results count (Raycast):"), 0, 0)
+        self.results_spin = QSpinBox()
+        self.results_spin.setRange(1, 50)
+        self.results_spin.setValue(settings.get("search_results_count", 5))
+        self.results_spin.valueChanged.connect(self._on_change)
+        search_layout.addWidget(self.results_spin, 0, 1)
+
+        layout.addWidget(search_box)
+
+        # --- Logs & Maintenance ---
+        maint_box = QGroupBox("🧹 Logs & Maintenance")
+        maint_layout = QGridLayout(maint_box)
+
+        maint_layout.addWidget(QLabel("Max log file size:"), 0, 0)
+        self.log_size_spin = QSpinBox()
+        self.log_size_spin.setRange(1, 500)
+        self.log_size_spin.setSuffix(" MB")
+        self.log_size_spin.setValue(settings.get("max_log_size_mb", 50))
+        self.log_size_spin.valueChanged.connect(self._on_change)
+        maint_layout.addWidget(self.log_size_spin, 0, 1)
+
+        clear_log_btn = QPushButton("Clear Log")
+        clear_log_btn.clicked.connect(self._clear_log)
+        maint_layout.addWidget(clear_log_btn, 1, 0)
+
+        self.delete_index_btn = QPushButton("⚠️ Delete Index")
+        self.delete_index_btn.setStyleSheet("color: red;")
+        self.delete_index_btn.clicked.connect(self._delete_index)
+        maint_layout.addWidget(self.delete_index_btn, 1, 1)
+
+        layout.addWidget(maint_box)
+
+        # --- Startup ---
+        startup_box = QGroupBox("🚀 Startup")
+        startup_layout = QVBoxLayout(startup_box)
+
+        self.login_cb = QCheckBox("Launch LEANN Manager at login")
+        self.login_cb.setChecked(settings.get("launch_at_login", False))
+        self.login_cb.stateChanged.connect(self._on_change)
+        startup_layout.addWidget(self.login_cb)
+
+        layout.addWidget(startup_box)
+
+        layout.addStretch()
+        scroll.setWidget(container)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    def _on_change(self):
+        settings = self.cfg.setdefault("settings", {})
+        settings["pause_on_battery"] = self.battery_cb.isChecked()
+        settings["max_log_size_mb"] = self.log_size_spin.value()
+        settings["launch_at_login"] = self.login_cb.isChecked()
+        settings["search_results_count"] = self.results_spin.value()
+
+        self.cfg["reindex_interval_minutes"] = self.interval_spin.value()
+        self.cfg["index_name"] = self.index_name_input.text().strip() or "mac-search"
+        self.cfg["work_dir"] = self.work_dir_input.text().strip() or "~/.leann-search"
+
+        build_opts = self.cfg.setdefault("build_options", {})
+        build_opts["backend"] = self.backend_combo.currentText()
+        build_opts["embedding_model"] = self.embedding_input.text().strip() or "facebook/contriever"
+        build_opts["compact"] = self.compact_cb.isChecked()
+
+        self.config_changed.emit()
+
+    def _browse_work_dir(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Work Directory")
+        if path:
+            home = str(Path.home())
+            display = path.replace(home, "~") if path.startswith(home) else path
+            self.work_dir_input.setText(display)
+            self._on_change()
+
+    def _clear_log(self):
+        if DEFAULT_LOG_PATH.exists():
+            DEFAULT_LOG_PATH.unlink()
+        old = DEFAULT_LOG_PATH.with_suffix(".log.old")
+        if old.exists():
+            old.unlink()
+        QMessageBox.information(self, "Logs", "Log files cleared.")
+
+    def _delete_index(self):
+        work_dir = get_work_dir(self.cfg)
+        index_name = self.cfg.get("index_name", "mac-search")
+        index_dir = work_dir / ".leann" / "indexes" / index_name
+
+        if not index_dir.exists():
+            QMessageBox.information(self, "Delete Index", "No index found.")
+            return
+
+        reply = QMessageBox.warning(
+            self,
+            "Delete Index",
+            f"Delete index '{index_name}' at:\n{index_dir}\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            import shutil
+            shutil.rmtree(index_dir, ignore_errors=True)
+            QMessageBox.information(self, "Delete Index", "Index deleted.")
+
+
 # --- Main Window ---
 
 class LeannManager(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LEANN Search Manager")
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(640, 560)
 
         self.cfg = load_config()
         self._ensure_defaults()
@@ -511,6 +728,10 @@ class LeannManager(QMainWindow):
         self.stats_tab = StatsTab(self.cfg)
         tabs.addTab(self.stats_tab, "📊 Stats")
 
+        self.settings_tab = SettingsTab(self.cfg)
+        self.settings_tab.config_changed.connect(self._save)
+        tabs.addTab(self.settings_tab, "⚙️ Settings")
+
         self.setCentralWidget(tabs)
 
         # Auto-refresh stats every 10s
@@ -524,6 +745,12 @@ class LeannManager(QMainWindow):
         self.cfg.setdefault("folders", [])
         self.cfg.setdefault("file_types", {})
         self.cfg.setdefault("reindex_interval_minutes", 30)
+        self.cfg.setdefault("settings", {
+            "pause_on_battery": True,
+            "max_log_size_mb": 50,
+            "launch_at_login": False,
+            "search_results_count": 5,
+        })
         self.cfg.setdefault("build_options", {
             "backend": "hnsw",
             "compact": False,

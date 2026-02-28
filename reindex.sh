@@ -99,6 +99,11 @@ backend = build_opts.get('backend', 'hnsw')
 compact = build_opts.get('compact', False)
 embedding_model = build_opts.get('embedding_model', 'facebook/contriever')
 
+# Settings
+settings = cfg.get('settings', {})
+pause_on_battery = settings.get('pause_on_battery', True)
+max_log_size_mb = settings.get('max_log_size_mb', 50)
+
 result = {
     'work_dir': work_dir,
     'index_name': index_name,
@@ -107,6 +112,8 @@ result = {
     'backend': backend,
     'compact': compact,
     'embedding_model': embedding_model,
+    'pause_on_battery': pause_on_battery,
+    'max_log_size_mb': max_log_size_mb,
 }
 print(json.dumps(result))
 "
@@ -125,6 +132,30 @@ if [ -z "$FOLDERS" ]; then
   log "SKIP: No enabled folders found in config"
   write_status "idle" "No folders configured"
   exit 0
+fi
+
+# --- Battery Check ---
+
+PAUSE_ON_BATTERY=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('pause_on_battery', True))" 2>/dev/null || echo "True")
+
+if [ "$PAUSE_ON_BATTERY" = "True" ] || [ "$PAUSE_ON_BATTERY" = "true" ]; then
+  POWER_SOURCE=$(pmset -g batt 2>/dev/null | head -1 || echo "")
+  if echo "$POWER_SOURCE" | grep -q "Battery Power"; then
+    log "SKIP: Running on battery power (pause_on_battery=true)"
+    write_status "idle" "Paused: on battery power"
+    exit 0
+  fi
+fi
+
+# --- Log Rotation ---
+
+MAX_LOG_MB=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('max_log_size_mb', 50))" 2>/dev/null || echo "50")
+if [ -f "$LOG_FILE" ]; then
+  LOG_SIZE_MB=$(( $(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0) / 1048576 ))
+  if [ "$LOG_SIZE_MB" -ge "$MAX_LOG_MB" ]; then
+    mv "$LOG_FILE" "${LOG_FILE}.old"
+    log "Log rotated (was ${LOG_SIZE_MB}MB, limit ${MAX_LOG_MB}MB)"
+  fi
 fi
 
 # --- Build Index ---
