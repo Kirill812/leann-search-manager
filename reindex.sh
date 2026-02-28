@@ -12,6 +12,13 @@ LOG_FILE="${LEANN_SEARCH_LOG:-$HOME/.leann-search/reindex.log}"
 LOCK_FILE="$HOME/.leann-search/.reindex.lock"
 STATUS_FILE="$HOME/.leann-search/status.json"
 
+# Use project venv python (has PyYAML) or fall back to system python3
+if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
+  PYTHON="$SCRIPT_DIR/.venv/bin/python"
+else
+  PYTHON="python3"
+fi
+
 # --- Helpers ---
 
 log() {
@@ -69,7 +76,7 @@ echo $$ > "$LOCK_FILE"
 # --- Parse Config (using python for YAML) ---
 
 read_config() {
-  python3 -c "
+  $PYTHON -c "
 import yaml, os, json
 
 with open('$CONFIG_FILE') as f:
@@ -120,13 +127,13 @@ print(json.dumps(result))
 }
 
 CONFIG_JSON=$(read_config)
-WORK_DIR=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['work_dir'])")
-INDEX_NAME=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['index_name'])")
-FOLDERS=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(' '.join(json.load(sys.stdin)['folders']))")
-EXTENSIONS=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['extensions'])")
-BACKEND=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['backend'])")
-COMPACT=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['compact'])")
-EMBEDDING_MODEL=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['embedding_model'])")
+WORK_DIR=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['work_dir'])")
+INDEX_NAME=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['index_name'])")
+FOLDERS=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(' '.join(json.load(sys.stdin)['folders']))")
+EXTENSIONS=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['extensions'])")
+BACKEND=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['backend'])")
+COMPACT=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['compact'])")
+EMBEDDING_MODEL=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin)['embedding_model'])")
 
 if [ -z "$FOLDERS" ]; then
   log "SKIP: No enabled folders found in config"
@@ -136,7 +143,7 @@ fi
 
 # --- Battery Check ---
 
-PAUSE_ON_BATTERY=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('pause_on_battery', True))" 2>/dev/null || echo "True")
+PAUSE_ON_BATTERY=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin).get('pause_on_battery', True))" 2>/dev/null || echo "True")
 
 if [ "$PAUSE_ON_BATTERY" = "True" ] || [ "$PAUSE_ON_BATTERY" = "true" ]; then
   POWER_SOURCE=$(pmset -g batt 2>/dev/null | head -1 || echo "")
@@ -149,7 +156,7 @@ fi
 
 # --- Log Rotation ---
 
-MAX_LOG_MB=$(echo "$CONFIG_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('max_log_size_mb', 50))" 2>/dev/null || echo "50")
+MAX_LOG_MB=$(echo "$CONFIG_JSON" | $PYTHON -c "import sys,json; print(json.load(sys.stdin).get('max_log_size_mb', 50))" 2>/dev/null || echo "50")
 if [ -f "$LOG_FILE" ]; then
   LOG_SIZE_MB=$(( $(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0) / 1048576 ))
   if [ "$LOG_SIZE_MB" -ge "$MAX_LOG_MB" ]; then
