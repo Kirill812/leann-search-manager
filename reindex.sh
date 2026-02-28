@@ -165,18 +165,30 @@ if [ -f "$LOG_FILE" ]; then
   fi
 fi
 
-# --- Build Index ---
+# --- Convert to Markdown ---
 
 mkdir -p "$WORK_DIR"
+MD_CACHE="$HOME/.leann-search/md-cache"
 
 log "Starting reindex: index=$INDEX_NAME folders=$FOLDERS"
-write_status "indexing" "Indexing in progress..."
+write_status "indexing" "Converting files to Markdown..."
 
-BUILD_CMD="$LEANN_BIN build $INDEX_NAME --docs $FOLDERS --backend-name $BACKEND --embedding-model $EMBEDDING_MODEL"
+log "Step 1/2: Converting files to Markdown"
+$PYTHON "$SCRIPT_DIR/convert.py" >> "$LOG_FILE" 2>&1
+CONVERT_EXIT=$?
 
-if [ -n "$EXTENSIONS" ]; then
-  BUILD_CMD="$BUILD_CMD --file-types $EXTENSIONS"
+if [ $CONVERT_EXIT -ne 0 ]; then
+  log "ERROR: Markdown conversion failed (exit $CONVERT_EXIT)"
+  write_status "error" "Conversion failed (exit $CONVERT_EXIT)"
+  exit $CONVERT_EXIT
 fi
+
+# --- Build Index from Markdown Cache ---
+
+write_status "indexing" "Building LEANN index..."
+
+# Feed only the md-cache directory to LEANN (all files are .md now)
+BUILD_CMD="$LEANN_BIN build $INDEX_NAME --docs $MD_CACHE --backend-name $BACKEND --embedding-model $EMBEDDING_MODEL --file-types .md"
 
 if [ "$COMPACT" = "False" ] || [ "$COMPACT" = "false" ]; then
   BUILD_CMD="$BUILD_CMD --no-compact"
@@ -185,6 +197,7 @@ fi
 START_TIME=$(date +%s)
 
 cd "$WORK_DIR"
+log "Step 2/2: Building LEANN index"
 log "Running: $BUILD_CMD"
 eval "$BUILD_CMD" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
