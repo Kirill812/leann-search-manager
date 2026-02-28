@@ -1,0 +1,70 @@
+# LEANN Search Manager Configuration
+# Edit this file or use the GUI manager to configure indexing.
+
+# Index name used by LEANN
+index_name: mac-search
+
+# Working directory where .leann/indexes/ will be stored
+# The index lives at {work_dir}/.leann/indexes/{index_name}/
+work_dir: ~/.leann-search
+
+# Folders to index (absolute paths)
+folders:
+  - path: ~/Documents
+    enabled: true
+  - path: ~/Desktop
+    enabled: true
+  - path: ~/Downloads
+    enabled: false
+  - path: ~/dev
+    enabled: false
+
+# File type groups
+file_types:
+  documents:
+    enabled: true
+    extensions:
+      - .pdf
+      - .docx
+      - .xlsx
+      - .pptx
+      - .doc
+      - .rtf
+  text:
+    enabled: true
+    extensions:
+      - .md
+      - .txt
+      - .csv
+      - .json
+      - .yaml
+      - .yml
+      - .toml
+      - .xml
+  code:
+    enabled: false
+    extensions:
+      - .py
+      - .js
+      - .ts
+      - .vue
+      - .html
+      - .css
+      - .sh
+      - .go
+      - .rs
+      - .java
+      - .rb
+      - .ipynb
+  custom:
+    enabled: false
+    extensions: []
+
+# Reindex interval in minutes (used by launchd)
+reindex_interval_minutes: 30
+
+# LEANN build options
+build_options:
+  backend: hnsw
+  compact: false  # false = enables incremental updates
+  embedding_model: facebook/contriever
