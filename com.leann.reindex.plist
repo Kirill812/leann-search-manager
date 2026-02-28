@@ -7,8 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/kgory/dev/leann-search-manager/reindex.sh</string>
+        <string>/Users/kgory/Applications/LEANN Search Manager.app/Contents/MacOS/launch</string>
+        <string>--reindex</string>
     </array>
 
     <key>StartInterval</key>
